@@ -3,6 +3,33 @@ import {ApiError} from "../utils/ApiError.js"
 import { User } from "../models/user.models.js";
 import { deleteFromCloudinary, uploadOnCloudinary } from "../utils/cloudinary.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
+//import {generateAccessToken , generateRefreshToken} from "../models/user.models.js"
+
+const generateAccessAndRefreshToken = async (userId) => {
+
+  try {
+    const user = await User.findById(userId);
+    if(!user){
+      throw new ApiError(
+        404,
+        "user not found"
+      )
+    }
+  
+    const accessToken = user.generateAccessToken();
+    const refreshToken = user.generateRefreshToken();
+  
+    user.refreshToken = refreshToken;
+    await user.save({validateBeforeSave : false});
+    return {accessToken,refreshToken};
+  } catch (error) {
+    throw new ApiError(
+      500,
+      "something went wrong while generating access and refresh token"
+    )
+  }
+
+}
 
 
 const registerUser = asyncHandler(async (req,res) => {
@@ -110,10 +137,70 @@ const registerUser = asyncHandler(async (req,res) => {
       "something went wrong while registering user and images were deleted"
     )
   }
-
 })
+
+const loginUser = asyncHandler( async (req,res) => {
+  const {email,username,password} = req.body;
+
+  //validation
+  if(!email){
+    throw new ApiError(
+      400,
+      "email is required"
+    )
+  }
+
+  const user = await User.findOne({
+    $or : [{username} , {email}]
+  })
+
+  if(!user){
+    throw new ApiError(
+      404,
+      "User not found"
+    )
+  }
+
+  //validate password
+  const isPasswordValid = await user.isPasswordCorrect(password);
+  if(!isPasswordValid){
+    throw new ApiError(
+      401,
+      "invalid user credentials -> password"
+    )
+  }
+
+  const {accessToken,refreshToken} = await generateAccessAndRefreshToken(user._id);
+
+  const loggedInUser = await User.findById(user._id).select("-password -refreshToken");
+
+  if(!loggedInUser){
+    throw new ApiError(
+      404,
+      "user not found in database"
+    )
+  }
+
+  const options = {
+    httpOnly : true,
+    secure : process.env.NODE_ENV==="production"
+  }
+
+  return res
+          .status(200)
+          .cookie("accessToken",accessToken,options)
+          .cookie("refreshToken",refreshToken,options)
+          .json( new ApiResponse(
+            200, 
+            {user : loggedInUser, accessToken, refreshToken}, 
+            "user logged in successfully"
+            ) 
+          )
+})
+
+
 
 export{
   registerUser,
-
+  loginUser
 }
