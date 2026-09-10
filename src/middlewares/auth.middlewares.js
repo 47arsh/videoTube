@@ -15,7 +15,7 @@ export const verifyJWT = asyncHandler( (async (req,res,next) => {
     }
     try {
         const decodedToken = jwt.verify(token,process.env.ACCESS_TOKEN_SECRET);
-        const user = await User.findById(decodedToken?._id || decodedToken?.id).select("-password -refreshToken");
+        const user = await User.findById(decodedToken?.id).select("-password -refreshToken");
         if(!user){
             throw new ApiError(
                 401,
@@ -34,3 +34,10 @@ export const verifyJWT = asyncHandler( (async (req,res,next) => {
     }
 }) 
 )
+
+export const requireRole = (...roles) => asyncHandler(async (req, res, next) => {
+    if (!req.user || !roles.includes(req.user.role)) {
+        throw new ApiError(403, "insufficient permissions");
+    }
+    next();
+});

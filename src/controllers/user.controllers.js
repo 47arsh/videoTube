@@ -56,8 +56,8 @@ const registerUser = asyncHandler(async (req,res) => {
       "username with email or password already exists"
     )
   }
-  const avatarLocalPath = req.files?.avatar[0]?.path;
-  const coverImageLocalPath = req.files?.coverImage[0]?.path;
+  const avatarLocalPath = req.files?.avatar?.[0]?.path;
+  const coverImageLocalPath = req.files?.coverImage?.[0]?.path;
 
   if(!avatarLocalPath) {
     throw new ApiError(
@@ -86,16 +86,12 @@ const registerUser = asyncHandler(async (req,res) => {
   }
 
   let coverImage;
-  try {
+  if (coverImageLocalPath) {
     coverImage = await uploadOnCloudinary(coverImageLocalPath);
-    console.log("coverImage uploaded!");
-    
-  } catch (error) {
-    console.log("error uploading coverImage :", error);
-    throw new ApiError(
-      500,
-      "failed to upload coverImage"
-    )
+    if (!coverImage) {
+      await deleteFromCloudinary(avatar.public_id);
+      throw new ApiError(500, "failed to upload coverImage");
+    }
   }
 
   try {
@@ -144,7 +140,7 @@ const loginUser = asyncHandler( async (req,res) => {
   const {email,username,password} = req.body;
 
   //validation
-  if(!email){
+  if(!email && !username){
     throw new ApiError(
       400,
       "email is required"
@@ -238,7 +234,7 @@ const refreshAccessToken = asyncHandler(async (req,res) => {
 
   try {
     const decodedToken = jwt.verify(incomingRefreshToken,process.env.REFRESH_TOKEN_SECRET);
-    const user = await User.findById(decodedToken?._id);
+    const user = await User.findById(decodedToken?.id);
     if(!user){
       throw new ApiError(
         401,
@@ -275,18 +271,17 @@ const refreshAccessToken = asyncHandler(async (req,res) => {
             )
 
   } catch (error) {
-    throw new ApiError(
-      500,
-      "Something went wrong while refreshing access token"
-    )
+    if (error instanceof ApiError) throw error;
+    throw new ApiError(401, "invalid refresh token");
   }
 
 })
 
 const changeCurrentPassword = asyncHandler(async(req,res)=>{
   const {oldPassword, newPassword} = req.body;
-  const user = await User.findById(req.USER?._id);
-  const isPasswordValid = await isPasswordCorrect(oldPassword);
+  const user = await User.findById(req.user?._id);
+  if(!user || !oldPassword || !newPassword) throw new ApiError(400, "oldPassword and newPassword are required");
+  const isPasswordValid = await user.isPasswordCorrect(oldPassword);
   if(!isPasswordValid){
     throw new ApiError(
       400,
@@ -341,7 +336,7 @@ const updateAccountDetails = asyncHandler(async(req,res)=>{
             )
 })
 const updateUserAvatar = asyncHandler(async(req,res)=>{
-  const avatarLocalPath = req.files?.path;
+  const avatarLocalPath = req.file?.path;
 
   if(!avatarLocalPath){
     throw new ApiError(
@@ -497,15 +492,24 @@ const getWatchHistory = asyncHandler(async(req,res)=>{
         }
       },
       {
+        $unwind : {
+          path : "$watchHistory",
+          preserveNullAndEmptyArrays : true
+        }
+      },
+      {
         $lookup : {
           from : "videos",
           localField : "watchHistory",
           foreignField : "_id",
-          as : "watchHistory"
+          as : "video"
         }
-      }
+      },
+      { $unwind : { path : "$video", preserveNullAndEmptyArrays : true } },
+      { $replaceRoot : { newRoot : "$video" } }
     ]
   )
+  return res.status(200).json(new ApiResponse(200, user.filter(Boolean), "watch history fetched successfully"));
 })
 
 export{
