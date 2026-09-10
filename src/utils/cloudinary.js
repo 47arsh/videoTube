@@ -1,20 +1,24 @@
 import { v2 as cloudinary } from "cloudinary";
 import fs from "fs";
 
-const uploadOnCloudinary = async (localFilePath) => {
+const configureCloudinary = () => {
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+  });
+};
+
+const uploadOnCloudinary = async (localFilePath, resourceType = "image") => {
   try {
     if (!localFilePath) return null;
 
-    cloudinary.config({
-      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-      api_key: process.env.CLOUDINARY_API_KEY,
-      api_secret: process.env.CLOUDINARY_API_SECRET,
-    });
+    configureCloudinary();
 
     const response = await cloudinary.uploader.upload(
       localFilePath.replace(/\\/g, "/"), // windows-safe path
       {
-        resource_type: "image",
+        resource_type: resourceType,
       }
     );
 
@@ -26,12 +30,16 @@ const uploadOnCloudinary = async (localFilePath) => {
   }
 };
 
-const deleteFromCloudinary = async(publicId) => {
+const deleteFromCloudinary = async(publicId, resourceType = "image") => {
   try {
-    const result = await cloudinary.uploader.destroy(publicId);
-    console.log("deleted from cloudinary. publicId : ",publicId);
+    if (!publicId) return null;
+    configureCloudinary();
+    const result = await cloudinary.uploader.destroy(publicId, {
+      resource_type: resourceType,
+    });
+    return result;
   } catch (error) {
-    console.log("error deleting from cloudinary ", error);
+    console.log("error deleting from cloudinary", error);
     return null;
   }
 }
