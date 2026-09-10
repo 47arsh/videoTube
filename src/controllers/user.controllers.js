@@ -307,6 +307,9 @@ const getCurrentUser = asyncHandler(async(req,res)=>{
               "current user details"
             ))
 })
+const getAdminProfile = asyncHandler(async(req,res)=>{
+  return res.status(200).json(new ApiResponse(200, req.user, "admin access verified"));
+})
 const updateAccountDetails = asyncHandler(async(req,res)=>{
   const {fullname,email} = req.body;
   if(!fullname || !email){
@@ -540,4 +543,5 @@ export{
   updateUserCoverImage,
   getUserChannelProfile,
   getWatchHistory
+  ,getAdminProfile
 }

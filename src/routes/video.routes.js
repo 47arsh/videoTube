@@ -8,6 +8,7 @@ import {
   publishVideo,
   togglePublishStatus,
   updateVideo,
+  getChannelAnalytics,
 } from "../controllers/video.controllers.js";
 
 const router = Router();
@@ -20,6 +21,7 @@ router.route("/").get(getVideos).post(
   ]),
   publishVideo,
 );
+router.route("/analytics/channel").get(verifyJWT, getChannelAnalytics);
 router.route("/:videoId").get(getVideoById).patch(
   verifyJWT,
   upload.fields([{ name: "thumbnail", maxCount: 1 }]),

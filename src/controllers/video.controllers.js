@@ -1,16 +1,17 @@
 import mongoose from "mongoose";
-import { Video } from "../models/video.models.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { deleteFromCloudinary, uploadOnCloudinary } from "../utils/cloudinary.js";
+import { videoService } from "../services/video.service.js";
+import { User } from "../models/user.models.js";
 
 const getVideoOrThrow = async (videoId) => {
   if (!mongoose.isValidObjectId(videoId)) {
     throw new ApiError(400, "invalid video id");
   }
 
-  const video = await Video.findById(videoId);
+  const video = await videoService.getById(videoId);
   if (!video) throw new ApiError(404, "video not found");
   return video;
 };
@@ -42,7 +43,7 @@ export const publishVideo = asyncHandler(async (req, res) => {
   }
 
   try {
-    const video = await Video.create({
+    const video = await videoService.create({
       videoFile: uploadedVideo.secure_url || uploadedVideo.url,
       videoPublicId: uploadedVideo.public_id,
       thumbnail: uploadedThumbnail.secure_url || uploadedThumbnail.url,
@@ -75,14 +76,7 @@ export const getVideos = asyncHandler(async (req, res) => {
     ];
   }
 
-  const [videos, total] = await Promise.all([
-    Video.find(filter)
-      .populate("owner", "username fullname avatar")
-      .sort(sort)
-      .skip((page - 1) * limit)
-      .limit(limit),
-    Video.countDocuments(filter),
-  ]);
+  const [videos, total] = await videoService.listPublished(filter, sort, (page - 1) * limit, limit);
 
   return res.status(200).json(new ApiResponse(200, {
     videos,
@@ -99,9 +93,28 @@ export const getVideoById = asyncHandler(async (req, res) => {
     throw new ApiError(404, "video not found");
   }
 
-  const updatedVideo = await Video.findByIdAndUpdate(video._id, { $inc: { views: 1 } }, { new: true })
-    .populate("owner", "username fullname avatar");
+  const updatedVideo = await videoService.incrementViews(video._id);
+  if (req.user) {
+    await User.findByIdAndUpdate(req.user._id, { $addToSet: { watchHistory: video._id } });
+  }
   return res.status(200).json(new ApiResponse(200, updatedVideo, "video fetched successfully"));
+});
+
+export const getChannelAnalytics = asyncHandler(async (req, res) => {
+  const analytics = await User.aggregate([
+    { $match: { _id: req.user._id } },
+    { $lookup: { from: "videos", localField: "_id", foreignField: "owner", as: "videos" } },
+    { $unwind: { path: "$videos", preserveNullAndEmptyArrays: true } },
+    { $match: { "videos.isPublished": true } },
+    { $group: {
+      _id: "$_id",
+      totalVideos: { $sum: 1 },
+      totalViews: { $sum: "$videos.views" },
+      averageViews: { $avg: "$videos.views" },
+    } },
+    { $project: { _id: 0, totalVideos: 1, totalViews: 1, averageViews: { $round: ["$averageViews", 2] } } },
+  ]);
+  return res.status(200).json(new ApiResponse(200, analytics[0] || { totalVideos: 0, totalViews: 0, averageViews: 0 }, "channel analytics fetched successfully"));
 });
 
 export const updateVideo = asyncHandler(async (req, res) => {
@@ -121,7 +134,7 @@ export const updateVideo = asyncHandler(async (req, res) => {
   }
 
   if (!Object.keys(updates).length) throw new ApiError(400, "no updates provided");
-  const updatedVideo = await Video.findByIdAndUpdate(video._id, updates, { new: true, runValidators: true });
+  const updatedVideo = await videoService.update(video._id, updates);
   if (thumbnailFile && video.thumbnailPublicId) await deleteFromCloudinary(video.thumbnailPublicId);
   return res.status(200).json(new ApiResponse(200, updatedVideo, "video updated successfully"));
 });
@@ -129,7 +142,7 @@ export const updateVideo = asyncHandler(async (req, res) => {
 export const deleteVideo = asyncHandler(async (req, res) => {
   const video = await getVideoOrThrow(req.params.videoId);
   ensureOwner(video, req.user._id);
-  await video.deleteOne();
+  await videoService.remove(video);
   await Promise.all([
     deleteFromCloudinary(video.videoPublicId, "video"),
     deleteFromCloudinary(video.thumbnailPublicId),
@@ -140,7 +153,6 @@ export const deleteVideo = asyncHandler(async (req, res) => {
 export const togglePublishStatus = asyncHandler(async (req, res) => {
   const video = await getVideoOrThrow(req.params.videoId);
   ensureOwner(video, req.user._id);
-  video.isPublished = !video.isPublished;
-  await video.save();
-  return res.status(200).json(new ApiResponse(200, video, "video publish status updated"));
+  const updatedVideo = await videoService.update(video._id, { isPublished: !video.isPublished });
+  return res.status(200).json(new ApiResponse(200, updatedVideo, "video publish status updated"));
 });

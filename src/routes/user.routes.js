@@ -1,7 +1,7 @@
 import { Router } from "express";
-import { registerUser,logoutUser,loginUser,refreshAccessToken,changeCurrentPassword,getCurrentUser,updateAccountDetails,updateUserAvatar,updateUserCoverImage,getUserChannelProfile,getWatchHistory } from "../controllers/user.controllers.js";
+import { registerUser,logoutUser,loginUser,refreshAccessToken,changeCurrentPassword,getCurrentUser,getAdminProfile,updateAccountDetails,updateUserAvatar,updateUserCoverImage,getUserChannelProfile,getWatchHistory } from "../controllers/user.controllers.js";
 import {upload} from "../middlewares/multer.middlewares.js"
-import { verifyJWT } from "../middlewares/auth.middlewares.js";
+import { requireRole, verifyJWT } from "../middlewares/auth.middlewares.js";
 
 const router = Router();
 
@@ -30,5 +30,6 @@ router.route("/avatar").patch(verifyJWT,upload.single("avatar"),updateUserAvatar
 router.route("/cover-image").patch(verifyJWT,upload.single("coverImage"),updateUserCoverImage);
 router.route("/:username/channel").get(getUserChannelProfile);
 router.route("/watch-history").get(verifyJWT,getWatchHistory);
+router.route("/admin").get(verifyJWT,requireRole("admin"),getAdminProfile);
 
 export default router;
