@@ -41,4 +41,7 @@ const videoSchema = new Schema({
     },
 },{timestamps : true})
 
+videoSchema.index({ owner: 1, createdAt: -1 });
+videoSchema.index({ isPublished: 1, createdAt: -1 });
+
 export const Video = mongoose.model("Video",videoSchema);
